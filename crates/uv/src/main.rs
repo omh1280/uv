@@ -794,17 +794,17 @@ async fn run() -> Result<ExitStatus> {
             let cache = cache.with_refresh(Refresh::from_args(args.refresh, args.refresh_package));
             let requirements = args
                 .src_file
-                .into_iter()
+                .iter()
                 .map(RequirementsSource::from_path)
                 .collect::<Vec<_>>();
             let constraints = args
                 .constraint
-                .into_iter()
+                .iter()
                 .map(RequirementsSource::from_path)
                 .collect::<Vec<_>>();
             let overrides = args
                 .r#override
-                .into_iter()
+                .iter()
                 .map(RequirementsSource::from_path)
                 .collect::<Vec<_>>();
             let index_urls = IndexLocations::from_args(

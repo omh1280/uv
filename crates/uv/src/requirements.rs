@@ -29,7 +29,7 @@ pub(crate) enum RequirementsSource {
 
 impl RequirementsSource {
     /// Parse a [`RequirementsSource`] from a [`PathBuf`].
-    pub(crate) fn from_path(path: PathBuf) -> Self {
+    pub(crate) fn from_path(path: &PathBuf) -> Self {
         return RequirementsSource::from_string(path.to_str().unwrap().to_string());
     }
 
@@ -90,7 +90,7 @@ impl RequirementsSource {
                         format!("`{name}` looks like a local directory but was passed as a package name. Did you mean `-e {name}`?");
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(name.into());
+                        return Self::RequirementsTxt(name);
                     }
                 }
             }
