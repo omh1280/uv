@@ -106,8 +106,8 @@ impl std::fmt::Display for RequirementsSource {
             Self::Editable(path) => write!(f, "-e {path}"),
             Self::RequirementsTxt(source) | Self::PyprojectToml(source) => {
                 write!(f, "{source}")
-            },
-            Self::Package(package) => write!(f, "{package}")
+            }
+            Self::Package(package) => write!(f, "{package}"),
         }
     }
 }
