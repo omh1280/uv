@@ -96,7 +96,7 @@ impl<'a, T: BuildContext> SourceDistCachedBuilder<'a, T> {
 
                 self.url(
                     source_dist,
-                    filename,
+                    &filename,
                     &url,
                     &cache_shard,
                     subdirectory.as_deref(),
@@ -177,7 +177,7 @@ impl<'a, T: BuildContext> SourceDistCachedBuilder<'a, T> {
 
                 self.url_metadata(
                     source_dist,
-                    filename,
+                    &filename,
                     &url,
                     &cache_shard,
                     subdirectory.as_deref(),
@@ -787,7 +787,11 @@ impl<'a, T: BuildContext> SourceDistCachedBuilder<'a, T> {
         drop(span);
 
         // Extract the top-level directory.
-        let extracted = uv_extract::strip_component(temp_dir.path())?;
+        let extracted = match uv_extract::strip_component(temp_dir.path()) {
+            Ok(top_level) => top_level,
+            Err(uv_extract::Error::NonSingularArchive(_)) => temp_dir.into_path(),
+            Err(err) => return Err(err.into()),
+        };
 
         // Persist it to the cache.
         fs_err::tokio::create_dir_all(cache_path.parent().expect("Cache entry to have parent"))

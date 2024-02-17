@@ -506,7 +506,7 @@ async fn install(
         reinstalls,
         extraneous: _,
     } = Planner::with_requirements(&requirements)
-        .with_editable_requirements(editables)
+        .with_editable_requirements(&editables)
         .build(
             site_packages,
             reinstall,
@@ -662,7 +662,7 @@ async fn install(
                     printer,
                     " {} {}{}",
                     "+".green(),
-                    event.dist.name().as_ref().white().bold(),
+                    event.dist.name().as_ref().bold(),
                     event.dist.installed_version().to_string().dimmed()
                 )?;
             }
@@ -671,7 +671,7 @@ async fn install(
                     printer,
                     " {} {}{}",
                     "-".red(),
-                    event.dist.name().as_ref().white().bold(),
+                    event.dist.name().as_ref().bold(),
                     event.dist.installed_version().to_string().dimmed()
                 )?;
             }
