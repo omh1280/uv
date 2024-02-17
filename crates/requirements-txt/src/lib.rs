@@ -1117,11 +1117,8 @@ mod test {
     #[test]
     fn url_test() -> Result<()> {
         let temp_dir = assert_fs::TempDir::new()?;
-        let error = RequirementsTxt::parse(
-            "https://example.com/requirements.txt",
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error = RequirementsTxt::parse("https://example.com/requirements.txt", temp_dir.path())
+            .unwrap_err();
         let errors = anyhow::Error::new(error).chain().join("\n");
 
         insta::assert_display_snapshot!(errors, @r###"
