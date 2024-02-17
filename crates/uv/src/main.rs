@@ -875,7 +875,7 @@ async fn run() -> Result<ExitStatus> {
             );
             let sources = args
                 .src_file
-                .into_iter()
+                .iter()
                 .map(RequirementsSource::from_path)
                 .collect::<Vec<_>>();
             let reinstall = Reinstall::from_args(args.reinstall, args.reinstall_package);
@@ -921,12 +921,12 @@ async fn run() -> Result<ExitStatus> {
                 .collect::<Vec<_>>();
             let constraints = args
                 .constraint
-                .into_iter()
+                .iter()
                 .map(RequirementsSource::from_path)
                 .collect::<Vec<_>>();
             let overrides = args
                 .r#override
-                .into_iter()
+                .iter()
                 .map(RequirementsSource::from_path)
                 .collect::<Vec<_>>();
             let index_urls = IndexLocations::from_args(
@@ -990,11 +990,7 @@ async fn run() -> Result<ExitStatus> {
                 .into_iter()
                 .map(RequirementsSource::from_package)
                 .chain(args.editable.into_iter().map(RequirementsSource::Editable))
-                .chain(
-                    args.requirement
-                        .into_iter()
-                        .map(RequirementsSource::from_path),
-                )
+                .chain(args.requirement.iter().map(RequirementsSource::from_path))
                 .collect::<Vec<_>>();
             commands::pip_uninstall(&sources, cache, printer).await
         }

@@ -120,6 +120,7 @@ pub(crate) async fn pip_compile(
         .filter(|_| !upgrade.is_all())
         .filter(|output_file| output_file.exists())
         .map(Path::to_path_buf)
+        .as_ref()
         .map(RequirementsSource::from_path)
         .as_ref()
         .map(|source| RequirementsSpecification::from_source(source, &extras))
