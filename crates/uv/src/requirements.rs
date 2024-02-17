@@ -64,7 +64,6 @@ impl RequirementsSource {
     pub(crate) fn from_package(name: String) -> Self {
         // If the user provided a `requirements.txt` file without `-r` (as in
         // `uv pip install requirements.txt`), prompt them to correct it.
-        println!("Calling from_package with name: {}", name);
         #[allow(clippy::case_sensitive_file_extension_comparisons)]
         if name.ends_with(".txt") || name.ends_with(".in") {
             if Path::new(&name).is_file() {
