@@ -8,9 +8,8 @@ use rustc_hash::FxHashSet;
 
 use distribution_types::{FlatIndexLocation, IndexUrl};
 use pep508_rs::Requirement;
-use requirements_txt::{EditableRequirement, FindLink, RequirementsTxt, RequirementsTxtSource};
+use requirements_txt::{EditableRequirement, FindLink, RequirementsTxt};
 use tracing::{instrument, Level};
-use url::Url;
 use uv_fs::Normalized;
 use uv_normalize::{ExtraName, PackageName};
 
@@ -23,29 +22,23 @@ pub(crate) enum RequirementsSource {
     /// An editable path was provided on the command line (e.g., `pip install -e ../flask`).
     Editable(String),
     /// Dependencies were provided via a `requirements.txt` file (e.g., `pip install -r requirements.txt`).
-    RequirementsTxt(RequirementsTxtSource),
+    RequirementsTxt(String),
     /// Dependencies were provided via a `pyproject.toml` file (e.g., `pip-compile pyproject.toml`).
-    PyprojectToml(RequirementsTxtSource),
+    PyprojectToml(String),
 }
 
 impl RequirementsSource {
     /// Parse a [`RequirementsSource`] from a [`PathBuf`].
     pub(crate) fn from_path(path: PathBuf) -> Self {
-        if path.ends_with("pyproject.toml") {
-            Self::PyprojectToml(RequirementsTxtSource::Path(path))
-        } else {
-            Self::RequirementsTxt(RequirementsTxtSource::Path(path))
-        }
+        return RequirementsSource::from_string(path.to_str().unwrap().to_string());
     }
 
     /// Parse a [`RequirementsSource`] from a user-provided string.
-    /// If the user-provided string is a path to a file, it will be treated as a `requirements.txt` file.
-    /// If the user-provided string is a URL, it will be treated as a `requirements.txt` file.
     pub(crate) fn from_string(source: String) -> Self {
-        if let Ok(url) = Url::parse(source.as_str()) {
-            Self::RequirementsTxt(RequirementsTxtSource::Url(url))
+        if source.ends_with("pyproject.toml") {
+            Self::PyprojectToml(source)
         } else {
-            Self::from_path(PathBuf::from(source))
+            Self::RequirementsTxt(source)
         }
     }
 
@@ -66,7 +59,7 @@ impl RequirementsSource {
                     );
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(RequirementsTxtSource::Path(name.into()));
+                        return Self::RequirementsTxt(name);
                     }
                 }
             }
@@ -81,9 +74,8 @@ impl RequirementsSource {
                     "`{name}` looks like a URL but was passed as a package name. Did you mean `-r {name}`?"
                 );
                 let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
-                let url = Url::parse(&name).unwrap();
                 if confirmation {
-                    return Self::RequirementsTxt(RequirementsTxtSource::Url(url));
+                    return Self::RequirementsTxt(name);
                 }
             }
         }
@@ -98,7 +90,7 @@ impl RequirementsSource {
                         format!("`{name}` looks like a local directory but was passed as a package name. Did you mean `-e {name}`?");
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(RequirementsTxtSource::Path(name.into()));
+                        return Self::RequirementsTxt(name.into());
                     }
                 }
             }
@@ -113,10 +105,9 @@ impl std::fmt::Display for RequirementsSource {
         match self {
             Self::Editable(path) => write!(f, "-e {path}"),
             Self::Package(package) => write!(f, "{package}"),
-            Self::RequirementsTxt(source) | Self::PyprojectToml(source) => match source {
-                RequirementsTxtSource::Path(path) => write!(f, "{}", path.display()),
-                RequirementsTxtSource::Url(url) => write!(f, "{url}"),
-            },
+            Self::RequirementsTxt(source) | Self::PyprojectToml(source) => {
+                write!(f, "{source}")
+            }
         }
     }
 }
@@ -236,58 +227,44 @@ impl RequirementsSpecification {
                 }
             }
             RequirementsSource::PyprojectToml(path) => {
-                match path {
-                    RequirementsTxtSource::Url(_) => {
-                        return Err(anyhow::anyhow!("`pyproject.toml` URLs are not supported"))
-                    }
-                    RequirementsTxtSource::Path(path) => {
-                        let contents = uv_fs::read_to_string(path)?;
-                        let pyproject_toml =
-                            toml::from_str::<pyproject_toml::PyProjectToml>(&contents)
-                                .with_context(|| {
-                                    format!("Failed to parse `{}`", path.normalized_display())
-                                })?;
-                        let mut used_extras = FxHashSet::default();
-                        let mut requirements = Vec::new();
-                        let mut project_name = None;
-                        if let Some(project) = pyproject_toml.project {
-                            requirements.extend(project.dependencies.unwrap_or_default());
-                            // Include any optional dependencies specified in `extras`
-                            if !matches!(extras, ExtrasSpecification::None) {
-                                for (name, optional_requirements) in
-                                    project.optional_dependencies.unwrap_or_default()
-                                {
-                                    // TODO(konstin): It's not ideal that pyproject-toml doesn't use
-                                    // `ExtraName`
-                                    let normalized_name = ExtraName::new(name)?;
-                                    if extras.contains(&normalized_name) {
-                                        used_extras.insert(normalized_name);
-                                        requirements.extend(optional_requirements);
-                                    }
-                                }
+                let contents = uv_fs::read_to_string(path)?;
+                let pyproject_toml = toml::from_str::<pyproject_toml::PyProjectToml>(&contents)
+                    .with_context(|| format!("Failed to parse `{}`", path.normalized_display()))?;
+                let mut used_extras = FxHashSet::default();
+                let mut requirements = Vec::new();
+                let mut project_name = None;
+                if let Some(project) = pyproject_toml.project {
+                    requirements.extend(project.dependencies.unwrap_or_default());
+                    // Include any optional dependencies specified in `extras`
+                    if !matches!(extras, ExtrasSpecification::None) {
+                        for (name, optional_requirements) in
+                            project.optional_dependencies.unwrap_or_default()
+                        {
+                            // TODO(konstin): It's not ideal that pyproject-toml doesn't use
+                            // `ExtraName`
+                            let normalized_name = ExtraName::new(name)?;
+                            if extras.contains(&normalized_name) {
+                                used_extras.insert(normalized_name);
+                                requirements.extend(optional_requirements);
                             }
-                            // Parse the project name
-                            project_name =
-                                Some(PackageName::new(project.name).with_context(|| {
-                                    format!(
-                                        "Invalid `project.name` in {}",
-                                        path.normalized_display()
-                                    )
-                                })?);
-                        }
-                        Self {
-                            project: project_name,
-                            requirements,
-                            constraints: vec![],
-                            overrides: vec![],
-                            editables: vec![],
-                            extras: used_extras,
-                            index_url: None,
-                            extra_index_urls: vec![],
-                            no_index: false,
-                            find_links: vec![],
                         }
                     }
+                    // Parse the project name
+                    project_name = Some(PackageName::new(project.name).with_context(|| {
+                        format!("Invalid `project.name` in {}", path.normalized_display())
+                    })?);
+                }
+                Self {
+                    project: project_name,
+                    requirements,
+                    constraints: vec![],
+                    overrides: vec![],
+                    editables: vec![],
+                    extras: used_extras,
+                    index_url: None,
+                    extra_index_urls: vec![],
+                    no_index: false,
+                    find_links: vec![],
                 }
             }
         })
