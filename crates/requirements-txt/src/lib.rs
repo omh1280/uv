@@ -336,11 +336,31 @@ impl RequirementsTxt {
                 })?
             }
             RequirementsTxtSource::Url(url) => {
-                // not yet implemented
-                return Err(RequirementsTxtFileError {
-                    file: PathBuf::from(url.as_str()),
-                    error: RequirementsTxtParserError::UnsupportedUrl(url.to_string()),
-                });
+                // Use the `reqwest` crate to download the file.
+                reqwest::blocking::get(url.as_str())
+                    .map_err(|err| RequirementsTxtFileError {
+                        file: PathBuf::from(url.as_str()),
+                        error: RequirementsTxtParserError::IO(io::Error::new(
+                            io::ErrorKind::Other,
+                            err.to_string(),
+                        )),
+                    })?
+                    .error_for_status()
+                    .map_err(|err| RequirementsTxtFileError {
+                        file: PathBuf::from(url.as_str()),
+                        error: RequirementsTxtParserError::IO(io::Error::new(
+                            io::ErrorKind::Other,
+                            err.to_string(),
+                        )),
+                    })?
+                    .text()
+                    .map_err(|err| RequirementsTxtFileError {
+                        file: PathBuf::from(url.as_str()),
+                        error: RequirementsTxtParserError::IO(io::Error::new(
+                            io::ErrorKind::Other,
+                            err.to_string(),
+                        )),
+                    })?
             }
         };
 
@@ -998,6 +1018,7 @@ mod test {
     use itertools::Itertools;
     use tempfile::tempdir;
     use test_case::test_case;
+    use url::Url;
     use uv_fs::Normalized;
 
     use crate::{EditableRequirement, RequirementsTxt, RequirementsTxtSource};
@@ -1069,6 +1090,23 @@ mod test {
 
         let snapshot = format!("line-endings-{}", path.to_string_lossy());
         insta::assert_debug_snapshot!(snapshot, actual);
+    }
+
+    #[test]
+    fn url_test() -> Result<()> {
+        let temp_dir = assert_fs::TempDir::new()?;
+        let error = RequirementsTxt::parse(
+            &RequirementsTxtSource::from(Url::parse("https://example.com/requirements.txt")?),
+            temp_dir.path(),
+        )
+        .unwrap_err();
+        let errors = anyhow::Error::new(error).chain().join("\n");
+
+        insta::assert_display_snapshot!(errors, @r###"
+        Unsupported URL (expected a `file://` scheme) in `<REQUIREMENTS_TXT>`: `https://example.com/requirements.txt`
+        "###);
+
+        Ok(())
     }
 
     #[test]
