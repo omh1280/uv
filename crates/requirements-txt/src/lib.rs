@@ -80,26 +80,50 @@ enum RequirementsTxtStatement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementsTxtSource {
     /// A `requirements.txt` file was provided on the command line (e.g., `pip install -r requirements.txt`).
-    File(PathBuf),
+    Path(PathBuf),
     /// A `requirements.txt` file was provided via a URL (e.g., `pip install -r https://example.com/requirements.txt`).
     Url(Url),
 }
 
-impl From<PathBuf> for RequirementsTxtSource {
-    fn from(path: PathBuf) -> Self {
-        RequirementsTxtSource::File(path)
-    }
-}
+impl RequirementsTxtSource {
+    /// TODO: docs
+    ///
+    /// For example:
+    /// - `file:///home/ferris/project/scripts/...`
+    /// - `file:../ferris/`
+    /// - `../ferris/`
+    /// - `https://download.pytorch.org/whl/torch_stable.html`
+    pub fn parse(given: &str, working_dir: &impl AsRef<Path>) -> Result<Self, url::ParseError> {
+        if let Some((scheme, path)) = split_scheme(given) {
+            if scheme == "file" {
+                // Ex) `file:///home/ferris/project/scripts/...` or `file:../ferris/`
+                let path = path.strip_prefix("//").unwrap_or(path);
 
-impl From<&Path> for RequirementsTxtSource {
-    fn from(path: &Path) -> Self {
-        RequirementsTxtSource::File(path.to_path_buf())
-    }
-}
+                // Transform, e.g., `/C:/Users/ferris/wheel-0.42.0.tar.gz` to `C:\Users\ferris\wheel-0.42.0.tar.gz`.
+                let path = normalize_url_path(path);
 
-impl From<Url> for RequirementsTxtSource {
-    fn from(url: Url) -> Self {
-        RequirementsTxtSource::Url(url)
+                let path = PathBuf::from(path.as_ref());
+                let path = if path.is_absolute() {
+                    path
+                } else {
+                    working_dir.as_ref().join(path)
+                };
+                Ok(Self::Path(path))
+            } else {
+                // Ex) `https://download.pytorch.org/whl/torch_stable.html`
+                let url = Url::parse(given)?;
+                Ok(Self::Url(url))
+            }
+        } else {
+            // Ex) `../ferris/`
+            let path = PathBuf::from(given);
+            let path = if path.is_absolute() {
+                path
+            } else {
+                working_dir.as_ref().join(path)
+            };
+            Ok(Self::Path(path))
+        }
     }
 }
 
@@ -320,16 +344,24 @@ pub struct RequirementsTxt {
 }
 
 impl RequirementsTxt {
-    #[instrument(skip_all, fields(requirements_txt = match &requirements_txt {
-        RequirementsTxtSource::File(path) => path.as_os_str().to_str(),
-        RequirementsTxtSource::Url(url) => Some(url.as_str()),
-    }))]
+    #[instrument(skip_all, fields(requirements_txt = %requirements_txt))]
     pub fn parse(
-        requirements_txt: &RequirementsTxtSource,
+        requirements_txt: &str,
         working_dir: impl AsRef<Path>,
     ) -> Result<Self, RequirementsTxtFileError> {
-        let content = match requirements_txt {
-            RequirementsTxtSource::File(path) => {
+        let requirements_txt_source = RequirementsTxtSource::parse(requirements_txt, &working_dir)
+            .map_err(|err| RequirementsTxtFileError {
+                file: PathBuf::from(requirements_txt),
+                error: RequirementsTxtParserError::Url {
+                    source: err,
+                    url: requirements_txt.to_string(),
+                    start: 0,
+                    end: 0,
+                },
+            })?;
+        // Get the content of the file or URL
+        let content = match &requirements_txt_source {
+            RequirementsTxtSource::Path(path) => {
                 uv_fs::read_to_string(path).map_err(|err| RequirementsTxtFileError {
                     file: path.clone(),
                     error: RequirementsTxtParserError::IO(err),
@@ -365,14 +397,14 @@ impl RequirementsTxt {
         };
 
         let working_dir = working_dir.as_ref();
-        let requirements_dir = match requirements_txt {
-            RequirementsTxtSource::File(path) => path.parent().unwrap_or(working_dir),
+        let requirements_dir = match &requirements_txt_source {
+            RequirementsTxtSource::Path(path) => path.parent().unwrap_or(working_dir),
             RequirementsTxtSource::Url(_) => working_dir,
         };
         let data = Self::parse_inner(&content, working_dir, requirements_dir).map_err(|err| {
             RequirementsTxtFileError {
-                file: match requirements_txt {
-                    RequirementsTxtSource::File(path) => path.clone(),
+                file: match &requirements_txt_source {
+                    RequirementsTxtSource::Path(path) => path.clone(),
                     RequirementsTxtSource::Url(url) => PathBuf::from(url.as_str()),
                 },
                 error: err,
@@ -381,8 +413,8 @@ impl RequirementsTxt {
         if data == Self::default() {
             warn_user!(
                 "Requirements file {} does not contain any dependencies",
-                match requirements_txt {
-                    RequirementsTxtSource::File(path) => path.display().to_string(),
+                match &requirements_txt_source {
+                    RequirementsTxtSource::Path(path) => path.display().to_string(),
                     RequirementsTxtSource::Url(url) => url.to_string(),
                 }
             );
@@ -412,14 +444,8 @@ impl RequirementsTxt {
                     start,
                     end,
                 } => {
-                    let requirements_txt_source = match Url::parse(&filename_or_url) {
-                        Ok(url) => RequirementsTxtSource::Url(url),
-                        Err(_) => {
-                            RequirementsTxtSource::File(requirements_dir.join(filename_or_url))
-                        }
-                    };
-                    // let sub_file = requirements_dir.join(filename_or_url);
-                    let sub_requirements = Self::parse(&requirements_txt_source, working_dir)
+                    let sub_file = requirements_dir.join(filename_or_url);
+                    let sub_requirements = Self::parse(sub_file.to_str().unwrap(), working_dir)
                         .map_err(|err| RequirementsTxtParserError::Subfile {
                             source: Box::new(err),
                             start,
@@ -433,14 +459,13 @@ impl RequirementsTxt {
                     start,
                     end,
                 } => {
-                    let sub_file = RequirementsTxtSource::File(requirements_dir.join(filename));
-                    let sub_constraints = Self::parse(&sub_file, working_dir).map_err(|err| {
-                        RequirementsTxtParserError::Subfile {
+                    let sub_file = requirements_dir.join(filename);
+                    let sub_constraints = Self::parse(sub_file.to_str().unwrap(), working_dir)
+                        .map_err(|err| RequirementsTxtParserError::Subfile {
                             source: Box::new(err),
                             start,
                             end,
-                        }
-                    })?;
+                        })?;
                     // Treat any nested requirements or constraints as constraints. This differs
                     // from `pip`, which seems to treat `-r` requirements in constraints files as
                     // _requirements_, but we don't want to support that.
@@ -1018,10 +1043,9 @@ mod test {
     use itertools::Itertools;
     use tempfile::tempdir;
     use test_case::test_case;
-    use url::Url;
     use uv_fs::Normalized;
 
-    use crate::{EditableRequirement, RequirementsTxt, RequirementsTxtSource};
+    use crate::{EditableRequirement, RequirementsTxt};
 
     fn workspace_test_data_dir() -> PathBuf {
         PathBuf::from("./test-data")
@@ -1042,8 +1066,7 @@ mod test {
         let requirements_txt = working_dir.join(path);
 
         let actual =
-            RequirementsTxt::parse(&RequirementsTxtSource::from(requirements_txt), &working_dir)
-                .unwrap();
+            RequirementsTxt::parse(requirements_txt.to_str().unwrap(), &working_dir).unwrap();
 
         let snapshot = format!("parse-{}", path.to_string_lossy());
         insta::assert_debug_snapshot!(snapshot, actual);
@@ -1085,8 +1108,7 @@ mod test {
         fs::write(&requirements_txt, contents).unwrap();
 
         let actual =
-            RequirementsTxt::parse(&RequirementsTxtSource::File(requirements_txt), &working_dir)
-                .unwrap();
+            RequirementsTxt::parse(requirements_txt.to_str().unwrap(), &working_dir).unwrap();
 
         let snapshot = format!("line-endings-{}", path.to_string_lossy());
         insta::assert_debug_snapshot!(snapshot, actual);
@@ -1096,7 +1118,7 @@ mod test {
     fn url_test() -> Result<()> {
         let temp_dir = assert_fs::TempDir::new()?;
         let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(Url::parse("https://example.com/requirements.txt")?),
+            "https://example.com/requirements.txt",
             temp_dir.path(),
         )
         .unwrap_err();
@@ -1118,11 +1140,9 @@ mod test {
             -r missing.txt
         "})?;
 
-        let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(requirements_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error =
+            RequirementsTxt::parse(requirements_txt.path().to_str().unwrap(), temp_dir.path())
+                .unwrap_err();
         let errors = anyhow::Error::new(error)
             .chain()
             // The last error is operating-system specific.
@@ -1157,11 +1177,9 @@ mod test {
             numpy[ö]==1.29
         "})?;
 
-        let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(requirements_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error =
+            RequirementsTxt::parse(requirements_txt.path().to_str().unwrap(), temp_dir.path())
+                .unwrap_err();
         let errors = anyhow::Error::new(error).chain().join("\n");
 
         let requirement_txt =
@@ -1192,11 +1210,9 @@ mod test {
             -e http://localhost:8080/
         "})?;
 
-        let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(requirements_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error =
+            RequirementsTxt::parse(requirements_txt.path().to_str().unwrap(), temp_dir.path())
+                .unwrap_err();
         let errors = anyhow::Error::new(error).chain().join("\n");
 
         let requirement_txt =
@@ -1222,11 +1238,9 @@ mod test {
             -e black[,abcdef]
         "})?;
 
-        let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(requirements_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error =
+            RequirementsTxt::parse(requirements_txt.path().to_str().unwrap(), temp_dir.path())
+                .unwrap_err();
         let errors = anyhow::Error::new(error).chain().join("\n");
 
         let requirement_txt =
@@ -1254,11 +1268,9 @@ mod test {
             --index-url 123
         "})?;
 
-        let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(requirements_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error =
+            RequirementsTxt::parse(requirements_txt.path().to_str().unwrap(), temp_dir.path())
+                .unwrap_err();
         let errors = anyhow::Error::new(error).chain().join("\n");
 
         let requirement_txt =
@@ -1292,11 +1304,9 @@ mod test {
             file.txt
         "})?;
 
-        let error = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(requirements_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap_err();
+        let error =
+            RequirementsTxt::parse(requirements_txt.path().to_str().unwrap(), temp_dir.path())
+                .unwrap_err();
         let errors = anyhow::Error::new(error).chain().join("\n");
 
         let requirement_txt =
@@ -1337,11 +1347,8 @@ mod test {
             -r subdir/child.txt
         "})?;
 
-        let requirements = RequirementsTxt::parse(
-            &RequirementsTxtSource::from(parent_txt.path()),
-            temp_dir.path(),
-        )
-        .unwrap();
+        let requirements =
+            RequirementsTxt::parse(parent_txt.path().to_str().unwrap(), temp_dir.path()).unwrap();
         insta::assert_debug_snapshot!(requirements, @r###"
         RequirementsTxt {
             requirements: [

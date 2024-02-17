@@ -32,9 +32,9 @@ impl RequirementsSource {
     /// Parse a [`RequirementsSource`] from a [`PathBuf`].
     pub(crate) fn from_path(path: PathBuf) -> Self {
         if path.ends_with("pyproject.toml") {
-            Self::PyprojectToml(RequirementsTxtSource::File(path))
+            Self::PyprojectToml(RequirementsTxtSource::Path(path))
         } else {
-            Self::RequirementsTxt(RequirementsTxtSource::File(path))
+            Self::RequirementsTxt(RequirementsTxtSource::Path(path))
         }
     }
 
@@ -66,7 +66,7 @@ impl RequirementsSource {
                     );
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(RequirementsTxtSource::File(name.into()));
+                        return Self::RequirementsTxt(RequirementsTxtSource::Path(name.into()));
                     }
                 }
             }
@@ -98,7 +98,7 @@ impl RequirementsSource {
                         format!("`{name}` looks like a local directory but was passed as a package name. Did you mean `-e {name}`?");
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(RequirementsTxtSource::File(name.into()));
+                        return Self::RequirementsTxt(RequirementsTxtSource::Path(name.into()));
                     }
                 }
             }
@@ -114,7 +114,7 @@ impl std::fmt::Display for RequirementsSource {
             Self::Editable(path) => write!(f, "-e {path}"),
             Self::Package(package) => write!(f, "{package}"),
             Self::RequirementsTxt(source) | Self::PyprojectToml(source) => match source {
-                RequirementsTxtSource::File(path) => write!(f, "{}", path.display()),
+                RequirementsTxtSource::Path(path) => write!(f, "{}", path.display()),
                 RequirementsTxtSource::Url(url) => write!(f, "{url}"),
             },
         }
@@ -240,7 +240,7 @@ impl RequirementsSpecification {
                     RequirementsTxtSource::Url(_) => {
                         return Err(anyhow::anyhow!("`pyproject.toml` URLs are not supported"))
                     }
-                    RequirementsTxtSource::File(path) => {
+                    RequirementsTxtSource::Path(path) => {
                         let contents = uv_fs::read_to_string(path)?;
                         let pyproject_toml =
                             toml::from_str::<pyproject_toml::PyProjectToml>(&contents)
