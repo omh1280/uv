@@ -85,6 +85,43 @@ pub enum RequirementsTxtSource {
     Url(Url),
 }
 
+impl RequirementsTxtSource {
+    /// TODO: docs
+    ///
+    /// For example:
+    /// - `file:///home/ferris/project/scripts/...`
+    /// - `file:../ferris/`
+    /// - `../ferris/`
+    /// - `https://download.pytorch.org/whl/torch_stable.html`
+    pub fn parse(given: &str, working_dir: &impl AsRef<Path>) -> Result<Self, url::ParseError> {
+        parse_helper(
+            given,
+            working_dir,
+            RequirementsTxtSource::Path,
+            RequirementsTxtSource::Url,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FindLink {
+    Path(PathBuf),
+    Url(Url),
+}
+
+impl FindLink {
+    /// Parse a raw string for a `--find-links` entry, which could be a URL or a local path.
+    ///
+    /// For example:
+    /// - `file:///home/ferris/project/scripts/...`
+    /// - `file:../ferris/`
+    /// - `../ferris/`
+    /// - `https://download.pytorch.org/whl/torch_stable.html`
+    pub fn parse(given: &str, working_dir: impl AsRef<Path>) -> Result<Self, url::ParseError> {
+        parse_helper(given, &working_dir, FindLink::Path, FindLink::Url)
+    }
+}
+
 /// Parse a raw string for a `--find-links` entry, which could be a URL or a local path.
 ///
 /// For example:
@@ -131,42 +168,6 @@ where
             working_dir.as_ref().join(path)
         };
         Ok(path_handler(path))
-    }
-}
-impl RequirementsTxtSource {
-    /// TODO: docs
-    ///
-    /// For example:
-    /// - `file:///home/ferris/project/scripts/...`
-    /// - `file:../ferris/`
-    /// - `../ferris/`
-    /// - `https://download.pytorch.org/whl/torch_stable.html`
-    pub fn parse(given: &str, working_dir: &impl AsRef<Path>) -> Result<Self, url::ParseError> {
-        parse_helper(
-            given,
-            working_dir,
-            RequirementsTxtSource::Path,
-            RequirementsTxtSource::Url,
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FindLink {
-    Path(PathBuf),
-    Url(Url),
-}
-
-impl FindLink {
-    /// Parse a raw string for a `--find-links` entry, which could be a URL or a local path.
-    ///
-    /// For example:
-    /// - `file:///home/ferris/project/scripts/...`
-    /// - `file:../ferris/`
-    /// - `../ferris/`
-    /// - `https://download.pytorch.org/whl/torch_stable.html`
-    pub fn parse(given: &str, working_dir: impl AsRef<Path>) -> Result<Self, url::ParseError> {
-        parse_helper(given, &working_dir, FindLink::Path, FindLink::Url)
     }
 }
 
