@@ -112,7 +112,7 @@ impl std::fmt::Display for RequirementsSource {
             Self::Package(package) => write!(f, "{package}"),
             Self::RequirementsTxt(source) => match source {
                 RequirementsTxtSource::File(path) => write!(f, "{}", path.display()),
-                RequirementsTxtSource::Url(url) => write!(f, "{}", url),
+                RequirementsTxtSource::Url(url) => write!(f, "{url}"),
             },
             Self::PyprojectToml(path) => write!(f, "{}", path.display()),
         }
