@@ -795,17 +795,17 @@ async fn run() -> Result<ExitStatus> {
             let requirements = args
                 .src_file
                 .iter()
-                .map(RequirementsSource::from_path)
+                .map(|path_buf| RequirementsSource::from_path(path_buf.as_path()))
                 .collect::<Vec<_>>();
             let constraints = args
                 .constraint
                 .iter()
-                .map(RequirementsSource::from_path)
+                .map(|path_buf| RequirementsSource::from_path(path_buf.as_path()))
                 .collect::<Vec<_>>();
             let overrides = args
                 .r#override
                 .iter()
-                .map(RequirementsSource::from_path)
+                .map(|path_buf| RequirementsSource::from_path(path_buf.as_path()))
                 .collect::<Vec<_>>();
             let index_urls = IndexLocations::from_args(
                 args.index_url,
@@ -876,7 +876,7 @@ async fn run() -> Result<ExitStatus> {
             let sources = args
                 .src_file
                 .iter()
-                .map(RequirementsSource::from_path)
+                .map(|path_buf| RequirementsSource::from_path(path_buf.as_path()))
                 .collect::<Vec<_>>();
             let reinstall = Reinstall::from_args(args.reinstall, args.reinstall_package);
             let no_binary = NoBinary::from_args(args.no_binary);
@@ -922,12 +922,12 @@ async fn run() -> Result<ExitStatus> {
             let constraints = args
                 .constraint
                 .iter()
-                .map(RequirementsSource::from_path)
+                .map(|path_buf| RequirementsSource::from_path(path_buf.as_path()))
                 .collect::<Vec<_>>();
             let overrides = args
                 .r#override
                 .iter()
-                .map(RequirementsSource::from_path)
+                .map(|path_buf| RequirementsSource::from_path(path_buf.as_path()))
                 .collect::<Vec<_>>();
             let index_urls = IndexLocations::from_args(
                 args.index_url,
@@ -990,7 +990,11 @@ async fn run() -> Result<ExitStatus> {
                 .into_iter()
                 .map(RequirementsSource::from_package)
                 .chain(args.editable.into_iter().map(RequirementsSource::Editable))
-                .chain(args.requirement.iter().map(RequirementsSource::from_path))
+                .chain(
+                    args.requirement
+                        .iter()
+                        .map(|path_buf| RequirementsSource::from_path(path_buf.as_path())),
+                )
                 .collect::<Vec<_>>();
             commands::pip_uninstall(&sources, cache, printer).await
         }

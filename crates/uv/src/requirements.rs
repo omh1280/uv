@@ -1,6 +1,6 @@
 //! A standard interface for working with heterogeneous sources of requirements.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use console::Term;
@@ -29,7 +29,7 @@ pub(crate) enum RequirementsSource {
 
 impl RequirementsSource {
     /// Parse a [`RequirementsSource`] from a [`PathBuf`].
-    pub(crate) fn from_path(path: &PathBuf) -> Self {
+    pub(crate) fn from_path(path: &Path) -> Self {
         return RequirementsSource::from_string(path.to_str().unwrap().to_string());
     }
 
