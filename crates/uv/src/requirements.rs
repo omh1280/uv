@@ -8,7 +8,7 @@ use rustc_hash::FxHashSet;
 
 use distribution_types::{FlatIndexLocation, IndexUrl};
 use pep508_rs::Requirement;
-use requirements_txt::{EditableRequirement, FindLink, RequirementsTxt};
+use requirements_txt::{EditableRequirement, FindLink, RequirementsTxt, RequirementsTxtSource};
 use tracing::{instrument, Level};
 use url::Url;
 use uv_fs::Normalized;
@@ -28,14 +28,6 @@ pub(crate) enum RequirementsSource {
     PyprojectToml(PathBuf),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RequirementsTxtSource {
-    /// A `requirements.txt` file was provided on the command line (e.g., `pip install -r requirements.txt`).
-    File(PathBuf),
-    /// A `requirements.txt` file was provided via a URL (e.g., `pip install -r https://example.com/requirements.txt`).
-    Url(Url),
-}
-
 impl RequirementsSource {
     /// Parse a [`RequirementsSource`] from a [`PathBuf`].
     pub(crate) fn from_path(path: PathBuf) -> Self {
@@ -50,7 +42,7 @@ impl RequirementsSource {
     /// If the user-provided string is a path to a file, it will be treated as a `requirements.txt` file.
     /// If the user-provided string is a URL, it will be treated as a `requirements.txt` file.
     pub(crate) fn from_string(source: String) -> Self {
-        if let Ok(url) = Url::parse(source.as_str()) { 
+        if let Ok(url) = Url::parse(source.as_str()) {
             Self::RequirementsTxt(RequirementsTxtSource::Url(url))
         } else {
             Self::from_path(PathBuf::from(source))

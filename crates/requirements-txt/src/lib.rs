@@ -83,6 +83,14 @@ pub enum FindLink {
     Url(Url),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequirementsTxtSource {
+    /// A `requirements.txt` file was provided on the command line (e.g., `pip install -r requirements.txt`).
+    File(PathBuf),
+    /// A `requirements.txt` file was provided via a URL (e.g., `pip install -r https://example.com/requirements.txt`).
+    Url(Url),
+}
+
 impl FindLink {
     /// Parse a raw string for a `--find-links` entry, which could be a URL or a local path.
     ///

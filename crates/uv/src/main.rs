@@ -12,7 +12,7 @@ use owo_colors::OwoColorize;
 use tracing::instrument;
 
 use distribution_types::{FlatIndexLocation, IndexLocations, IndexUrl};
-use requirements::{ExtrasSpecification};
+use requirements::ExtrasSpecification;
 use uv_cache::{Cache, CacheArgs, Refresh};
 use uv_client::Connectivity;
 use uv_installer::{NoBinary, Reinstall};
