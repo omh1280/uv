@@ -104,10 +104,10 @@ impl std::fmt::Display for RequirementsSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Editable(path) => write!(f, "-e {path}"),
-            Self::Package(package) => write!(f, "{package}"),
             Self::RequirementsTxt(source) | Self::PyprojectToml(source) => {
                 write!(f, "{source}")
-            }
+            },
+            Self::Package(package) => write!(f, "{package}")
         }
     }
 }
