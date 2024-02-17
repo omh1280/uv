@@ -10,6 +10,7 @@ use distribution_types::{FlatIndexLocation, IndexUrl};
 use pep508_rs::Requirement;
 use requirements_txt::{EditableRequirement, FindLink, RequirementsTxt};
 use tracing::{instrument, Level};
+use url::Url;
 use uv_fs::Normalized;
 use uv_normalize::{ExtraName, PackageName};
 
@@ -22,9 +23,17 @@ pub(crate) enum RequirementsSource {
     /// An editable path was provided on the command line (e.g., `pip install -e ../flask`).
     Editable(String),
     /// Dependencies were provided via a `requirements.txt` file (e.g., `pip install -r requirements.txt`).
-    RequirementsTxt(PathBuf),
+    RequirementsTxt(RequirementsTxtSource),
     /// Dependencies were provided via a `pyproject.toml` file (e.g., `pip-compile pyproject.toml`).
     PyprojectToml(PathBuf),
+}
+
+#[derive(Debug)]
+pub(crate) enum RequirementsTxtSource {
+    /// A `requirements.txt` file was provided on the command line (e.g., `pip install -r requirements.txt`).
+    File(PathBuf),
+    /// A `requirements.txt` file was provided via a URL (e.g., `pip install -r https://example.com/requirements.txt`).
+    Url(Url),
 }
 
 impl RequirementsSource {
@@ -33,7 +42,7 @@ impl RequirementsSource {
         if path.ends_with("pyproject.toml") {
             Self::PyprojectToml(path)
         } else {
-            Self::RequirementsTxt(path)
+            Self::RequirementsTxt(RequirementsTxtSource::File(path))
         }
     }
 
@@ -54,8 +63,24 @@ impl RequirementsSource {
                     );
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(name.into());
+                        return Self::RequirementsTxt(RequirementsTxtSource::File(name.into()));
                     }
+                }
+            }
+        }
+
+        // If the user provided a URL without `-r` (as in
+        // `uv pip install https://example.com/requirements.txt`), prompt them to correct it.
+        if name.starts_with("http://") || name.starts_with("https://") {
+            let term = Term::stderr();
+            if term.is_term() {
+                let prompt = format!(
+                    "`{name}` looks like a URL but was passed as a package name. Did you mean `-r {name}`?"
+                );
+                let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
+                let url = Url::parse(&name).unwrap();
+                if confirmation {
+                    return Self::RequirementsTxt(RequirementsTxtSource::Url(url));
                 }
             }
         }
@@ -70,7 +95,7 @@ impl RequirementsSource {
                         format!("`{name}` looks like a local directory but was passed as a package name. Did you mean `-e {name}`?");
                     let confirmation = confirm::confirm(&prompt, &term, true).unwrap();
                     if confirmation {
-                        return Self::RequirementsTxt(name.into());
+                        return Self::RequirementsTxt(RequirementsTxtSource::File(name.into()));
                     }
                 }
             }
@@ -84,10 +109,12 @@ impl std::fmt::Display for RequirementsSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Editable(path) => write!(f, "-e {path}"),
-            Self::RequirementsTxt(path) | Self::PyprojectToml(path) => {
-                write!(f, "{}", path.display())
-            }
             Self::Package(package) => write!(f, "{package}"),
+            Self::RequirementsTxt(source) => match source {
+                RequirementsTxtSource::File(path) => write!(f, "{}", path.display()),
+                RequirementsTxtSource::Url(url) => write!(f, "{}", url),
+            },
+            Self::PyprojectToml(path) => write!(f, "{}", path.display()),
         }
     }
 }
@@ -175,7 +202,17 @@ impl RequirementsSpecification {
                     find_links: vec![],
                 }
             }
-            RequirementsSource::RequirementsTxt(path) => {
+            RequirementsSource::RequirementsTxt(requirements_txt_source) => {
+                // TODO: support URL
+                let path = match requirements_txt_source {
+                    RequirementsTxtSource::File(path) => path,
+                    RequirementsTxtSource::Url(url) => {
+                        return Err(anyhow::anyhow!(
+                            "URL-based requirements files are not yet supported: {}",
+                            url
+                        ))
+                    }
+                };
                 let requirements_txt = RequirementsTxt::parse(path, std::env::current_dir()?)?;
                 Self {
                     project: None,
