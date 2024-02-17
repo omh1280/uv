@@ -28,7 +28,7 @@ pub(crate) enum RequirementsSource {
     PyprojectToml(PathBuf),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RequirementsTxtSource {
     /// A `requirements.txt` file was provided on the command line (e.g., `pip install -r requirements.txt`).
     File(PathBuf),
@@ -46,6 +46,17 @@ impl RequirementsSource {
         }
     }
 
+    /// Parse a [`RequirementsSource`] from a user-provided string.
+    /// If the user-provided string is a path to a file, it will be treated as a `requirements.txt` file.
+    /// If the user-provided string is a URL, it will be treated as a `requirements.txt` file.
+    pub(crate) fn from_string(source: String) -> Self {
+        if let Ok(url) = Url::parse(source.as_str()) { 
+            Self::RequirementsTxt(RequirementsTxtSource::Url(url))
+        } else {
+            Self::from_path(PathBuf::from(source))
+        }
+    }
+
     /// Parse a [`RequirementsSource`] from a user-provided string, assumed to be a package.
     ///
     /// If the user provided a value that appears to be a `requirements.txt` file or a local
@@ -53,6 +64,7 @@ impl RequirementsSource {
     pub(crate) fn from_package(name: String) -> Self {
         // If the user provided a `requirements.txt` file without `-r` (as in
         // `uv pip install requirements.txt`), prompt them to correct it.
+        println!("Calling from_package with name: {}", name);
         #[allow(clippy::case_sensitive_file_extension_comparisons)]
         if name.ends_with(".txt") || name.ends_with(".in") {
             if Path::new(&name).is_file() {

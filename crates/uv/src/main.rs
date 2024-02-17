@@ -12,7 +12,7 @@ use owo_colors::OwoColorize;
 use tracing::instrument;
 
 use distribution_types::{FlatIndexLocation, IndexLocations, IndexUrl};
-use requirements::ExtrasSpecification;
+use requirements::{ExtrasSpecification};
 use uv_cache::{Cache, CacheArgs, Refresh};
 use uv_client::Connectivity;
 use uv_installer::{NoBinary, Reinstall};
@@ -434,7 +434,7 @@ struct PipInstallArgs {
 
     /// Install all packages listed in the given requirements files.
     #[clap(short, long, group = "sources")]
-    requirement: Vec<PathBuf>,
+    requirement: Vec<String>,
 
     /// Install the editable package based on the provided local file path.
     #[clap(short, long, group = "sources")]
@@ -916,7 +916,7 @@ async fn run() -> Result<ExitStatus> {
                 .chain(
                     args.requirement
                         .into_iter()
-                        .map(RequirementsSource::from_path),
+                        .map(RequirementsSource::from_string),
                 )
                 .collect::<Vec<_>>();
             let constraints = args
