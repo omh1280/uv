@@ -330,7 +330,7 @@ impl RequirementsTxt {
     ) -> Result<Self, RequirementsTxtFileError> {
         let content = match requirements_txt {
             RequirementsTxtSource::File(path) => {
-                uv_fs::read_to_string(&path).map_err(|err| RequirementsTxtFileError {
+                uv_fs::read_to_string(path).map_err(|err| RequirementsTxtFileError {
                     file: path.clone(),
                     error: RequirementsTxtParserError::IO(err),
                 })?
